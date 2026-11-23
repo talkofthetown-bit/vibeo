@@ -390,7 +390,7 @@ form.addEventListener('submit',function(e){
  .then(function(j){
   if(j&&(j.success===true||j.success==='true')){form.style.display='none';$('#done').style.display='block'}
   else{fail(d,j&&j.message);sendBtn.disabled=false;sendBtn.textContent='Book Your Spot!'}
- }).catch(function(){fail(d);sendBtn.disabled=false;sendBtn.textContent='Book Your Spot!'});
+ }).catch(function(x){fail(d,'network: '+(x&&x.message||'blocked'));sendBtn.disabled=false;sendBtn.textContent='Book Your Spot!'});
 });
 $$('.fld input,.fld select,.fld textarea',form).forEach(function(i){i.addEventListener('input',function(){i.closest('.fld').classList.remove('bad')})});
 
