@@ -57,9 +57,9 @@ em{font-style:normal;color:var(--red)}
 .stars i{position:absolute;width:3px;height:3px;border-radius:50%;background:#fff;animation:tw 4s ease-in-out infinite}
 @keyframes tw{50%{opacity:.1}}
 .scene{position:relative;min-height:420px;display:grid;place-items:center;z-index:1}
-.scene .mk{width:min(210px,52%);position:relative;z-index:2;animation:bob 6s ease-in-out infinite}
-.scene .mk img{display:block;width:100%;height:auto;border-radius:50%;box-shadow:0 0 0 14px #F4FEC9}
-.scene:before{content:"";position:absolute;width:min(300px,76%);aspect-ratio:1;border-radius:50%;border:2px dashed rgba(244,254,201,.5)}
+.scene .mk{width:min(260px,60%);position:relative;z-index:2;animation:bob 6s ease-in-out infinite}
+.scene .mk img{display:block;width:100%;height:auto;border-radius:50%}
+
 @keyframes bob{50%{transform:translateY(-6px)}}
 .bub{position:absolute;background:#F4FEC9;color:#0A2B5E;border-radius:22px;padding:12px 18px;font-weight:600;font-size:15px;box-shadow:0 10px 30px -10px rgba(0,0,0,.5);line-height:1.35;z-index:3}
 .bub.one{left:2%;top:12%;transform:rotate(-3deg)}
@@ -221,9 +221,7 @@ footer small{display:block;margin-top:34px;color:#9FC0F0}
   <div class="nightcard">
    <div class="stars" id="stars"></div>
    <div class="scene">
-    <div class="bub one">Who made your site?!</div>
     <div class="mk" id="bigmark" role="img" aria-label="Talk Of The Town logo"></div>
-    <div class="bub two">Talk Of The Town.</div>
    </div>
    <div class="pick">
     <h3>What do you need?</h3>
@@ -327,7 +325,7 @@ footer small{display:block;margin-top:34px;color:#9FC0F0}
 <script>
 (function(){
 var ENDPOINT = "https://api.web3forms.com/submit";
-var ACCESS_KEY = "";
+var ACCESS_KEY = "e76995c9-d17a-4a89-8f86-12027a557a6f";
 var EMAIL = "talkofthetownwork@gmail.com";
 var $=function(s,r){return (r||document).querySelector(s)};
 var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
