@@ -80,6 +80,9 @@
   .np { background: var(--plum); color: var(--white); border-radius: 24px; padding: 1.6rem; display: grid; gap: 1.2rem; min-width: 0; }
   .np .meta { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; } .np small { color: #C9B3C9; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; font-size: .72rem; }
   .np h4 { margin: .3rem 0 0; font: 600 1.5rem var(--head); } .np p { color: #C9B3C9; font-size: .95rem; }
+  .play { width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--tang); color: var(--white); display: grid; place-items: center; cursor: pointer; flex: none; transition: transform .15s, background .2s; }
+  .play:hover { background: var(--tang-d); transform: scale(1.06); } .play svg { width: 26px; height: 26px; fill: currentColor; }
+  .eq i { animation-play-state: paused; } .eq.on i { animation-play-state: running; }
   .live { background: var(--tang); border-radius: 99px; padding: .25rem .7rem; font: 700 .72rem var(--body); letter-spacing: .08em; text-transform: uppercase; }
   .eq { display: flex; align-items: flex-end; gap: 5px; height: 84px; }
   .eq i { flex: 1; border-radius: 6px 6px 2px 2px; background: linear-gradient(180deg, var(--sun), var(--tang)); height: calc(var(--h) * var(--lvl, .6)); transform-origin: bottom; animation: bounce 1.1s ease-in-out infinite alternate; animation-delay: var(--d); }
@@ -198,7 +201,7 @@
     <div class="dash-top"><h3>Good evening <span style="font-family:var(--body)">&#127926;</span></h3><span>Living room &middot; Vibeo Boom</span></div>
     <div class="dgrid">
       <div class="np">
-        <div class="meta"><div><small>Now playing</small><h4>Golden Hour Mix</h4><p>Your evening playlist</p></div><span class="live">Live</span></div>
+        <div class="meta"><div><small>Now playing</small><h4>Golden Hour Mix</h4><p id="npSub">Press play for a demo loop</p></div><button class="play" id="play" type="button" aria-label="Play Golden Hour Mix" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="playIco" d="M8 5v14l11-7z"/></svg></button></div>
         <div class="eq" id="eq" aria-hidden="true"></div>
         <div class="prog" aria-hidden="true"><i></i></div>
         <div class="vol"><span aria-hidden="true">&#128265;</span><input type="range" id="vol" min="0" max="100" value="62" aria-label="Volume"><b id="volN">62</b></div>
@@ -366,10 +369,48 @@
     $('#faqList').innerHTML = FAQ.map(function (f) { return '<details><summary>' + f[0] + '</summary><p>' + f[1] + '</p></details>'; }).join('');
     $('#fp').innerHTML = PK.map(function (k) { return '<li><a href="#p-' + k + '">' + P[k].n + '</a></li>'; }).join('');
 
-    // Hero player
+    // Hero player: plays audio/golden-hour.mp3 if you add one, otherwise a chill loop generated in the browser.
+    var playing = false, audioEl = null, ctx = null, master = null, sched = null, nextBarT = 0, nextBarI = 0, t0 = 0, useSynth = false;
+    var BEAT = 60 / 92, BAR = BEAT * 4, LOOP = BAR * 4;
+    var CHORDS = [[57, 60, 64, 67], [53, 57, 60, 64], [60, 64, 67, 71], [55, 59, 62, 64]], ROOTS = [45, 41, 48, 43];
+    function hz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+    function vol01() { return Math.pow(+$('#vol').value / 100, 2); }
+    function tone(type, f, t, dur, peak, att, filt) {
+      var o = ctx.createOscillator(), g = ctx.createGain(), n = filt ? ctx.createBiquadFilter() : null;
+      o.type = type; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(peak, t + att); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      if (n) { n.type = 'lowpass'; n.frequency.value = filt; o.connect(n); n.connect(g); } else o.connect(g);
+      g.connect(master); o.start(t); o.stop(t + dur + .05);
+    }
+    function kick(t) { var o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(42, t + .14); g.gain.setValueAtTime(.35, t); g.gain.exponentialRampToValueAtTime(.0001, t + .22); o.connect(g); g.connect(master); o.start(t); o.stop(t + .25); }
+    function hat(t) { var len = Math.floor(ctx.sampleRate * .05), b = ctx.createBuffer(1, len, ctx.sampleRate), d = b.getChannelData(0); for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len); var s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(); s.buffer = b; f.type = 'highpass'; f.frequency.value = 7000; g.gain.value = .12; s.connect(f); f.connect(g); g.connect(master); s.start(t); }
+    function playBar(t, i) {
+      var ch = CHORDS[i % 4];
+      ch.forEach(function (m) { tone('triangle', hz(m), t, BAR + .5, .045, .5, 1400); });
+      tone('sine', hz(ROOTS[i % 4]), t, BEAT * 1.6, .3, .02); tone('sine', hz(ROOTS[i % 4]), t + BEAT * 2, BEAT * 1.4, .24, .02);
+      var pat = [0, 1, 2, 3, 2, 1, 3, 2];
+      for (var s = 0; s < 8; s++) tone('sine', hz(ch[pat[s]] + 12), t + s * BEAT / 2, .5, .11, .01);
+      for (var b = 0; b < 4; b++) { kick(t + b * BEAT); hat(t + b * BEAT + BEAT / 2); }
+    }
+    function schedule() { while (nextBarT < ctx.currentTime + .8) { playBar(nextBarT, nextBarI); nextBarT += BAR; nextBarI++; } }
+    function startSynth() {
+      if (!ctx) { ctx = new (window.AudioContext || window.webkitAudioContext)(); master = ctx.createGain(); master.gain.value = vol01(); master.connect(ctx.destination); t0 = ctx.currentTime + .1; nextBarT = t0; nextBarI = 0; sched = setInterval(schedule, 200); schedule(); }
+      else ctx.resume();
+    }
+    function progress() { if (!playing) return; var p = 0; if (useSynth && ctx) p = ((ctx.currentTime - t0) % LOOP) / LOOP; else if (audioEl && audioEl.duration) p = audioEl.currentTime / audioEl.duration; document.querySelector('.prog i').style.width = Math.max(2, p * 100) + '%'; requestAnimationFrame(progress); }
+    function setUI(on) { playing = on; $('#eq').classList.toggle('on', on); var b = $('#play'); b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-label', (on ? 'Pause' : 'Play') + ' Golden Hour Mix'); $('#playIco').setAttribute('d', on ? 'M7 5h4v14H7zM13 5h4v14h-4z' : 'M8 5v14l11-7z'); $('#npSub').textContent = on ? (useSynth ? 'Playing a demo loop' : 'Playing now') : 'Press play for a demo loop'; if (on) progress(); }
+    $('#play').addEventListener('click', function () {
+      if (playing) { if (useSynth && ctx) ctx.suspend(); else if (audioEl) audioEl.pause(); setUI(false); return; }
+      if (useSynth) { startSynth(); setUI(true); return; }
+      if (!audioEl) { audioEl = new Audio('audio/golden-hour.mp3'); audioEl.loop = true; }
+      audioEl.volume = +$('#vol').value / 100;
+      var pr = audioEl.play();
+      if (pr && pr.then) pr.then(function () { setUI(true); }).catch(function () { useSynth = true; startSynth(); setUI(true); });
+      else { useSynth = true; startSynth(); setUI(true); }
+    });
+    // Hero player visuals
     var eq = $('#eq'), hs = [55, 80, 45, 95, 70, 60, 100, 50, 85, 65, 90, 48];
     eq.innerHTML = hs.map(function (h, i) { return '<i style="--h:' + h + 'px;--d:-' + (i * .13).toFixed(2) + 's"></i>'; }).join('');
-    function setVol() { var v = +$('#vol').value; $('#volN').textContent = v; $('#db').textContent = Math.round(45 + v * .5) + ' dB'; eq.style.setProperty('--lvl', (.25 + v / 100 * .75).toFixed(2)); }
+    function setVol() { var v = +$('#vol').value; if (master) master.gain.value = vol01(); if (audioEl) audioEl.volume = v / 100; $('#volN').textContent = v; $('#db').textContent = Math.round(45 + v * .5) + ' dB'; eq.style.setProperty('--lvl', (.25 + v / 100 * .75).toFixed(2)); }
     $('#vol').addEventListener('input', setVol); setVol();
     document.querySelectorAll('[data-sw]').forEach(function (b) { b.addEventListener('click', function () { b.setAttribute('aria-checked', b.getAttribute('aria-checked') === 'true' ? 'false' : 'true'); }); });
 
