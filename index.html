@@ -374,7 +374,7 @@
     var BEAT = 60 / 92, BAR = BEAT * 4, LOOP = BAR * 4;
     var CHORDS = [[57, 60, 64, 67], [53, 57, 60, 64], [60, 64, 67, 71], [55, 59, 62, 64]], ROOTS = [45, 41, 48, 43];
     function hz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
-    function vol01() { return Math.pow(+$('#vol').value / 100, 2); }
+    function vol01() { return Math.pow(+$('#vol').value / 100, 2) * 3; }
     function tone(type, f, t, dur, peak, att, filt) {
       var o = ctx.createOscillator(), g = ctx.createGain(), n = filt ? ctx.createBiquadFilter() : null;
       o.type = type; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(peak, t + att); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -393,19 +393,52 @@
     }
     function schedule() { while (nextBarT < ctx.currentTime + .8) { playBar(nextBarT, nextBarI); nextBarT += BAR; nextBarI++; } }
     function startSynth() {
-      if (!ctx) { ctx = new (window.AudioContext || window.webkitAudioContext)(); master = ctx.createGain(); master.gain.value = vol01(); master.connect(ctx.destination); t0 = ctx.currentTime + .1; nextBarT = t0; nextBarI = 0; sched = setInterval(schedule, 200); schedule(); }
-      else ctx.resume();
+      if (!ctx) { ctx = new (window.AudioContext || window.webkitAudioContext)(); master = ctx.createGain(); master.gain.value = vol01(); var comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 6; master.connect(comp); comp.connect(ctx.destination); }
+      if (ctx.state !== 'running') ctx.resume();
+      if (!sched) { t0 = ctx.currentTime + .1; nextBarT = t0; nextBarI = 0; sched = setInterval(schedule, 200); schedule(); }
     }
     function progress() { if (!playing) return; var p = 0; if (useSynth && ctx) p = ((ctx.currentTime - t0) % LOOP) / LOOP; else if (audioEl && audioEl.duration) p = audioEl.currentTime / audioEl.duration; document.querySelector('.prog i').style.width = Math.max(2, p * 100) + '%'; requestAnimationFrame(progress); }
-    function setUI(on) { playing = on; $('#eq').classList.toggle('on', on); var b = $('#play'); b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-label', (on ? 'Pause' : 'Play') + ' Golden Hour Mix'); $('#playIco').setAttribute('d', on ? 'M7 5h4v14H7zM13 5h4v14h-4z' : 'M8 5v14l11-7z'); $('#npSub').textContent = on ? (useSynth ? 'Playing a demo loop' : 'Playing now') : 'Press play for a demo loop'; if (on) progress(); }
+    function setUI(on) { playing = on; $('#eq').classList.toggle('on', on); var b = $('#play'); b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-label', (on ? 'Pause' : 'Play') + ' Golden Hour Mix'); $('#playIco').setAttribute('d', on ? 'M7 5h4v14H7zM13 5h4v14h-4z' : 'M8 5v14l11-7z'); $('#npSub').textContent = on ? (demo ? 'Playing a demo loop' : 'Playing now') : 'Press play for a demo loop'; if (on) progress(); }
+    // Phones often keep Web Audio silent (iPhone silent switch). So the loop is rendered once into a WAV file and played with a normal audio element, which phones always allow.
+    var hasFile = false, loopUrl = '', demo = false;
+    try { fetch('audio/golden-hour.mp3', { method: 'HEAD' }).then(function (r) { hasFile = r.ok; }).catch(function () {}); } catch (e) {}
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+    function toWav(f, sr) {
+      var n = f.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf), i;
+      function s(o, x) { for (var k = 0; k < x.length; k++) v.setUint8(o + k, x.charCodeAt(k)); }
+      s(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); s(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, n * 2, true);
+      for (i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, f[i])) * 32767, true);
+      return new Blob([buf], { type: 'audio/wav' });
+    }
+    function renderLoop() {
+      var OC = window.OfflineAudioContext || window.webkitOfflineAudioContext; if (!OC) return;
+      var sr = 22050, tail = Math.ceil(sr * 2), off = new OC(1, Math.ceil(sr * LOOP) + tail, sr), saveC = ctx, saveM = master;
+      ctx = off; master = off.createGain(); master.gain.value = 1; master.connect(off.destination);
+      for (var i = 0; i < 4; i++) playBar(i * BAR, i);
+      ctx = saveC; master = saveM;
+      function done(buf) {
+        var d = buf.getChannelData(0), n = Math.floor(sr * LOOP), out = new Float32Array(n), k, mx = 0.0001;
+        for (k = 0; k < n; k++) out[k] = d[k];
+        for (k = 0; k < tail && k < n; k++) out[k] += d[n + k] || 0;
+        for (k = 0; k < n; k++) mx = Math.max(mx, Math.abs(out[k]));
+        for (k = 0; k < n; k++) out[k] = out[k] / mx * 0.92;
+        loopUrl = URL.createObjectURL(toWav(out, sr));
+      }
+      var p = off.startRendering(); if (p && p.then) p.then(done); else off.oncomplete = function (e) { done(e.renderedBuffer); };
+    }
+    setTimeout(function () { try { renderLoop(); } catch (e) {} }, 300);
+    function playEl(src, isDemo) {
+      if (!audioEl) { audioEl = new Audio(); audioEl.loop = true; }
+      if (audioEl.getAttribute('data-src') !== src) { audioEl.src = src; audioEl.setAttribute('data-src', src); }
+      audioEl.volume = +$('#vol').value / 100; useSynth = false; demo = isDemo;
+      return audioEl.play();
+    }
+    function synthFallback() { useSynth = true; demo = true; try { startSynth(); setUI(true); } catch (e) {} }
     $('#play').addEventListener('click', function () {
       if (playing) { if (useSynth && ctx) ctx.suspend(); else if (audioEl) audioEl.pause(); setUI(false); return; }
-      if (useSynth) { startSynth(); setUI(true); return; }
-      if (!audioEl) { audioEl = new Audio('audio/golden-hour.mp3'); audioEl.loop = true; }
-      audioEl.volume = +$('#vol').value / 100;
-      var pr = audioEl.play();
-      if (pr && pr.then) pr.then(function () { setUI(true); }).catch(function () { useSynth = true; startSynth(); setUI(true); });
-      else { useSynth = true; startSynth(); setUI(true); }
+      var pr;
+      if (hasFile) pr = playEl('audio/golden-hour.mp3', false); else if (loopUrl) pr = playEl(loopUrl, true);
+      if (pr && pr.then) pr.then(function () { setUI(true); }).catch(synthFallback); else synthFallback();
     });
     // Hero player visuals
     var eq = $('#eq'), hs = [55, 80, 45, 95, 70, 60, 100, 50, 85, 65, 90, 48];
